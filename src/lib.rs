@@ -73,5 +73,7 @@ pub fn stdout_among_inputs<T>(inputs: &[T]) -> bool
 where
     T: Clircle,
 {
-    T::try_from(Stdio::Stdout).map_or(false, |stdout| inputs.contains(&stdout))
+    T::try_from(Stdio::Stdout)
+        .map(|stdout| inputs.contains(&stdout))
+        .unwrap_or(false)
 }
