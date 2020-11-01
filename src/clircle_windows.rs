@@ -15,6 +15,9 @@ use winapi::um::processenv::GetStdHandle;
 use winapi::um::winbase::{FILE_TYPE_DISK, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
 use winapi::um::winnt::{FILE_ATTRIBUTE_NORMAL, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, HANDLE};
 
+/// Re-export of winapi
+pub use winapi;
+
 /// Implementation of `Clircle` for Windows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WindowsIdentifier {

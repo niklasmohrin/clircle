@@ -24,12 +24,12 @@
 #[cfg(unix)]
 mod clircle_unix;
 #[cfg(unix)]
-pub use clircle_unix::UnixIdentifier;
+pub use clircle_unix::{nix, UnixIdentifier};
 
 #[cfg(windows)]
 mod clircle_windows;
 #[cfg(windows)]
-pub use clircle_windows::WindowsIdentifier;
+pub use clircle_windows::{winapi, WindowsIdentifier};
 
 #[cfg(unix)]
 /// Identifies a file. The type is aliased according to the target platform.

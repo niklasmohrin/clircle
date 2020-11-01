@@ -4,6 +4,9 @@ use nix::sys::stat::{fstat, stat, FileStat};
 use std::convert::TryFrom;
 use std::path::Path;
 
+/// Re-export of nix
+pub use nix;
+
 /// Implementation of `Clircle` for Unix.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UnixIdentifier {
