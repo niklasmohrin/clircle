@@ -11,9 +11,9 @@ pub use nix;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UnixIdentifier {
     /// The `st_dev` of a `FileStat` (returned by the `stat` family of functions).
-    pub device: u64,
+    pub device: libc::dev_t,
     /// The `st_ino` of a `FileStat` (returned by the `stat` family of functions).
-    pub inode: u64,
+    pub inode: libc::ino_t,
 }
 
 impl TryFrom<Stdio> for UnixIdentifier {
