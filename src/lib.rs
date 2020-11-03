@@ -77,3 +77,32 @@ where
         .map(|stdout| inputs.contains(&stdout))
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_from_path() -> Result<(), &'static str> {
+        // To ensure that this directory is deleted again, assert! is not invoked.
+        // Instead, this method returns Result and .? is used.
+        let dir = tempfile::tempdir().expect("Couldn't create tempdir.");
+        let dir_path = dir.path().to_path_buf();
+
+        let non_existing_file = dir_path.join("oop_in_c.txt");
+        if Identifier::try_from(non_existing_file.as_path()).is_ok() {
+            return Err(
+                "Identifier::try_from returned Ok when given a path to a file that does not exist.",
+            );
+        }
+
+        let exising_file = dir_path.join("useful_rust_resources.txt");
+        fs::write(&exising_file, b"github.com/rust-lang/rustlings")
+            .map_err(|_| "Failed to write file.")?;
+        Identifier::try_from(exising_file.as_path())
+            .map_err(|_| "Identifier::try_from returned Err when given a path to a valid file.")?;
+
+        Ok(())
+    }
+}
