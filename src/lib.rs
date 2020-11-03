@@ -81,7 +81,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::collections::HashSet;
+    use std::fs::{self, File};
+    use std::hash::Hash;
+
+    fn contains_duplicates<T>(items: &[T]) -> bool
+    where
+        T: Eq + Hash + Copy,
+    {
+        let mut set = HashSet::new();
+        items.iter().copied().any(|item| !set.insert(item))
+    }
 
     #[test]
     fn test_from_path() -> Result<(), &'static str> {
@@ -102,6 +112,35 @@ mod tests {
             .map_err(|_| "Failed to write file.")?;
         Identifier::try_from(exising_file.as_path())
             .map_err(|_| "Identifier::try_from returned Err when given a path to a valid file.")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_basic_comparisons() -> Result<(), &'static str> {
+        let dir = tempfile::tempdir().expect("Couldn't create tempdir.");
+        let dir_path = dir.path().to_path_buf();
+
+        let filenames = ["a", "b", "c", "d"];
+        let paths: Vec<_> = filenames
+            .iter()
+            .map(|filename| dir_path.join(filename))
+            .collect();
+
+        for path in &paths {
+            File::create(&path).map_err(|_| "Couldn't create temporary file.")?;
+        }
+
+        let identifiers = paths
+            .iter()
+            .map(AsRef::as_ref)
+            .map(Identifier::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "Some Identifier conversions failed.")?;
+
+        if contains_duplicates(&identifiers) {
+            return Err("Duplicate identifier found for set of unique paths.");
+        }
 
         Ok(())
     }

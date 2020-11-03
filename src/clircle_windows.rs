@@ -19,7 +19,7 @@ use winapi::um::winnt::{FILE_ATTRIBUTE_NORMAL, FILE_READ_ATTRIBUTES, FILE_SHARE_
 pub use winapi;
 
 /// Implementation of `Clircle` for Windows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct WindowsIdentifier {
     volume_serial: u32,
     file_index: u64,

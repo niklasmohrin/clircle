@@ -8,7 +8,7 @@ use std::path::Path;
 pub use nix;
 
 /// Implementation of `Clircle` for Unix.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct UnixIdentifier {
     /// The `st_dev` of a `FileStat` (returned by the `stat` family of functions).
     pub device: libc::dev_t,
