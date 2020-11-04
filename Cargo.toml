@@ -23,3 +23,6 @@ nix = "0.19.0"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["winnt", "winbase", "processenv", "handleapi", "ntdef", "fileapi"] }
+
+[dev-dependencies]
+tempfile = "3.1.0"
