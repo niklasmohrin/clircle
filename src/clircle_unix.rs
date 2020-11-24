@@ -7,13 +7,33 @@ use std::path::Path;
 /// Re-export of nix
 pub use nix;
 
+cfg_if::cfg_if! {
+    if #[cfg(not(target_os = "android"))] {
+        pub type DeviceType = libc::dev_t;
+        pub type InodeType = libc::ino_t;
+    } else {
+        // This is just deduced from the libc crate source code, which is generated using bindgen.
+        cfg_if::cfg_if! {
+            if #[cfg(target_pointer_width = "32")] {
+                pub type DeviceType = libc::c_ulonglong;
+                pub type InodeType = libc::c_ulonglong;
+            } else if #[cfg(target_pointer_width = "64")] {
+                pub type DeviceType = libc::dev_t;
+                pub type InodeType = libc::ino_t;
+            } else {
+                compile_error!("Unknown pointer width on android target.");
+            }
+        }
+    }
+}
+
 /// Implementation of `Clircle` for Unix.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct UnixIdentifier {
     /// The `st_dev` of a `FileStat` (returned by the `stat` family of functions).
-    pub device: libc::dev_t,
+    pub device: DeviceType,
     /// The `st_ino` of a `FileStat` (returned by the `stat` family of functions).
-    pub inode: libc::ino_t,
+    pub inode: InodeType,
 }
 
 impl TryFrom<Stdio> for UnixIdentifier {
