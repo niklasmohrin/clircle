@@ -1,12 +1,20 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: '0 9 * * MON'
+
 
 jobs:
   build:
     name: Build and test
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         rust: ["1.40.0", stable]
@@ -27,6 +35,32 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
+
+  build_extra:
+    name: Build on extra platforms
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - arm-unknown-linux-gnueabihf
+          - aarch64-unknown-linux-gnu
+          - aarch64-linux-android
+          - i686-linux-android
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+          default: true
+          profile: minimal
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target ${{ matrix.target }}
+          use-cross: true
 
   rustfmt:
     name: Check rustfmt
