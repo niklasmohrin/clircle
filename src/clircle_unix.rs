@@ -36,8 +36,19 @@ pub struct UnixIdentifier {
     pub inode: InodeType,
 }
 
+/// Error for `TryFrom<Stdio>`
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ClircleStdioError {
+    /// The given variant points to a tty. Clircle doesn't hand out `Identifier`s to a tty, because
+    /// if both stdin and stdout point to the same tty, no clash occurs, but a cycle will still be
+    /// detected.
+    IsTTY,
+    /// The error returned from fstat.
+    Nix(nix::Error),
+}
+
 impl TryFrom<Stdio> for UnixIdentifier {
-    type Error = nix::Error;
+    type Error = ClircleStdioError;
 
     fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
         let fd = match stdio {
@@ -45,7 +56,14 @@ impl TryFrom<Stdio> for UnixIdentifier {
             Stdio::Stdout => libc::STDOUT_FILENO,
             Stdio::Stderr => libc::STDERR_FILENO,
         };
-        fstat(fd).map(UnixIdentifier::from)
+
+        if nix::unistd::isatty(fd) == Ok(true) {
+            Err(ClircleStdioError::IsTTY)
+        } else {
+            fstat(fd)
+                .map(UnixIdentifier::from)
+                .map_err(ClircleStdioError::Nix)
+        }
     }
 }
 
