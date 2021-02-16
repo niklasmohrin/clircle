@@ -1,22 +1,45 @@
 //! The `clircle` crate helps you detect IO circles in your CLI applications.
 //!
-//! Imagine you want to
-//! read data from a couple of files and output something according to the contents of these files.
-//! If the user redirects the output of your program to one of the input files, you might end up in
-//! an infinite circle of reading and writing.
+//! Imagine you want to read data from a couple of files and output something according to the
+//! contents of these files. If the user redirects the output of your program to one of the input
+//! files, you might end up in an infinite circle of reading and writing.
 //!
 //! The crate provides the struct `Identifier` which is a platform dependent type alias, so that
 //! you can use it on all platforms and do not need to introduce any conditional compilation
-//! yourself.
-//! On both Unix and Windows systems, `Identifier` holds information to identify a file on a disk.
+//! yourself. `Identifier` implements the `Clircle` trait, which is where you should look for the
+//! public functionality.
 //!
 //! The `Clircle` trait is implemented on both of these structs and requires `TryFrom` for the
-//! `clircle::Stdio` enum and for `&Path`, so that all possible inputs can be represented as an
-//! `Identifier`.
-//! Finally, `Clircle` is a subtrait of `Eq`, so that the identifiers can be conveniently compared
-//! and circles can be detected.
-//! The `clircle` crate also provides some convenience functions around the comparison of `Clircle`
-//! implementors.
+//! `clircle::Stdio` enum and for `File`, so that all possible inputs can be represented as an
+//! `Identifier`. Additionally, there are `unsafe` methods for each specific implementation, but
+//! they are not recommended to use.
+//! Finally, `Clircle` is a subtrait of `Eq`, which allows checking if two `Identifier`s point to
+//! the same file, even if they don't conflict. If you only need this last feature, you should
+//! use [`same-file`](https://crates.io/crates/same-file) instead of this crate.
+//!
+//! ## Examples
+//!
+//! To check if two `Identifier`s conflict, use
+//! `Clircle::surely_conflicts_with`:
+//!
+//! ```rust,no_run
+//! # fn example() -> Option<()> {
+//! # use clircle::{Identifier, Clircle, Stdio::{Stdin, Stdout}};
+//! # use std::convert::TryFrom;
+//! let stdin = Identifier::stdin()?;
+//! let stdout = Identifier::stdout()?;
+//!
+//! if stdin.surely_conflicts_with(&stdout) {
+//!     eprintln!("stdin and stdout are conflicting!");
+//! }
+//! # Some(())
+//! # }
+//! ```
+//!
+//! On Linux, the above snippet could be used to detect `cat < x > x`, while allowing just
+//! `cat`, although stdin and stdout are pointing to the same pty in both cases. On Windows, this
+//! code will not print anything, because the same operation is safe there.
+
 #![deny(clippy::all)]
 #![deny(missing_docs)]
 #![warn(clippy::pedantic)]
@@ -96,7 +119,7 @@ where
     outputs.iter().find(|output| inputs.contains(output))
 }
 
-/// Finds `Stdio::Stdout` in the given slice.
+/// Checks if `Stdio::Stdout` is in the given slice.
 pub fn stdout_among_inputs<T>(inputs: &[T]) -> bool
 where
     T: Clircle,
