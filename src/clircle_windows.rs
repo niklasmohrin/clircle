@@ -1,34 +1,33 @@
-use crate::Stdio;
-use std::convert::TryFrom;
-use std::io;
-use std::iter;
-use std::mem::MaybeUninit;
-use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
-use std::ptr::null_mut;
+use crate::{Clircle, Stdio};
+
 use winapi::shared::ntdef::NULL;
-use winapi::um::fileapi::{
-    CreateFileW, GetFileInformationByHandle, GetFileType, BY_HANDLE_FILE_INFORMATION, OPEN_EXISTING,
+use winapi::um::{
+    fileapi::{GetFileInformationByHandle, GetFileType, BY_HANDLE_FILE_INFORMATION},
+    handleapi::INVALID_HANDLE_VALUE,
+    processenv::GetStdHandle,
+    winbase::{FILE_TYPE_DISK, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
 };
-use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
-use winapi::um::processenv::GetStdHandle;
-use winapi::um::winbase::{FILE_TYPE_DISK, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
-use winapi::um::winnt::{FILE_ATTRIBUTE_NORMAL, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, HANDLE};
+
+use std::convert::TryFrom;
+use std::fs::File;
+use std::mem::MaybeUninit;
+use std::os::windows::io::{FromRawHandle, IntoRawHandle, RawHandle};
+use std::{cmp, hash, io, mem, ops};
 
 /// Re-export of winapi
 pub use winapi;
 
 /// Implementation of `Clircle` for Windows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct WindowsIdentifier {
     volume_serial: u32,
     file_index: u64,
+    handle: RawHandle,
+    owns_handle: bool,
 }
 
-impl TryFrom<HANDLE> for WindowsIdentifier {
-    type Error = io::Error;
-
-    fn try_from(handle: HANDLE) -> Result<Self, Self::Error> {
+impl WindowsIdentifier {
+    unsafe fn try_from_raw_handle(handle: RawHandle, owns_handle: bool) -> Result<Self, io::Error> {
         if handle == INVALID_HANDLE_VALUE || handle == NULL {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -37,7 +36,7 @@ impl TryFrom<HANDLE> for WindowsIdentifier {
         }
         // SAFETY: This function can be called with any valid handle.
         // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfiletype
-        if unsafe { GetFileType(handle) } != FILE_TYPE_DISK {
+        if GetFileType(handle) != FILE_TYPE_DISK {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Tried to convert handle to WindowsIdentifier that was not a file handle.",
@@ -46,19 +45,37 @@ impl TryFrom<HANDLE> for WindowsIdentifier {
         let mut fi = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
         // SAFETY: This function is safe to call, if the handle is valid and a handle to a file.
         // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle
-        let success = unsafe { GetFileInformationByHandle(handle, fi.as_mut_ptr()) };
+        let success = GetFileInformationByHandle(handle, fi.as_mut_ptr());
         if success == 0 {
             Err(io::Error::last_os_error())
         } else {
             // SAFETY: If the return value of GetFileInformationByHandle is non-zero, the struct
             // has successfully been initialized (see link above).
-            let fi = unsafe { fi.assume_init() };
+            let fi = fi.assume_init();
 
-            Ok(WindowsIdentifier {
+            Ok(Self {
                 volume_serial: fi.dwVolumeSerialNumber,
                 file_index: u64::from(fi.nFileIndexHigh) << 32 | u64::from(fi.nFileIndexLow),
+                handle,
+                owns_handle,
             })
         }
+    }
+
+    unsafe fn take_handle(&mut self) -> Option<RawHandle> {
+        if self.owns_handle {
+            self.owns_handle = false;
+            Some(mem::replace(&mut self.handle, INVALID_HANDLE_VALUE))
+        } else {
+            None
+        }
+    }
+}
+
+impl Clircle for WindowsIdentifier {
+    #[must_use]
+    fn into_inner(mut self) -> Option<File> {
+        Some(unsafe { File::from_raw_handle(self.take_handle()?) })
     }
 }
 
@@ -79,46 +96,38 @@ impl TryFrom<Stdio> for WindowsIdentifier {
             return Err(io::Error::last_os_error());
         }
 
-        Self::try_from(handle)
+        unsafe { Self::try_from_raw_handle(handle, false) }
+    }
+}
+impl TryFrom<File> for WindowsIdentifier {
+    type Error = io::Error;
+
+    fn try_from(file: File) -> Result<Self, Self::Error> {
+        unsafe { Self::try_from_raw_handle(file.into_raw_handle(), true) }
     }
 }
 
-impl TryFrom<&'_ Path> for WindowsIdentifier {
-    type Error = io::Error;
-
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
-        // Convert to C-style UTF-16
-        let path: Vec<u16> = path
-            .as_os_str()
-            .encode_wide()
-            .chain(iter::once(0))
-            .collect();
-
-        // SAFETY: Arguments are specified according to documentation and failure is caught below.
-        // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
-        let handle = unsafe {
-            CreateFileW(
-                path.as_ptr(),
-                FILE_READ_ATTRIBUTES,
-                // Other processes can still read the file, but cannot write to it
-                FILE_SHARE_READ,
-                // No extra security attributes needed
-                null_mut(),
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                // No meaning in this mode
-                null_mut(),
-            )
-        };
-
-        if handle == INVALID_HANDLE_VALUE || handle == NULL {
-            return Err(io::Error::last_os_error());
+impl ops::Drop for WindowsIdentifier {
+    fn drop(&mut self) {
+        unsafe {
+            if let Some(handle) = self.take_handle() {
+                drop(File::from_raw_handle(handle));
+            }
         }
+    }
+}
 
-        let ret = WindowsIdentifier::try_from(handle);
-        // SAFETY: The handle is valid by the above comparison.
-        // https://docs.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
-        unsafe { CloseHandle(handle) };
-        ret
+impl cmp::PartialEq for WindowsIdentifier {
+    #[must_use]
+    fn eq(&self, other: &Self) -> bool {
+        self.volume_serial == other.volume_serial && self.file_index == other.file_index
+    }
+}
+impl Eq for WindowsIdentifier {}
+
+impl hash::Hash for WindowsIdentifier {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.volume_serial.hash(state);
+        self.file_index.hash(state);
     }
 }
