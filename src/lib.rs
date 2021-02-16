@@ -40,12 +40,25 @@ cfg_if::cfg_if! {
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
-use std::path::Path;
+use std::fs::File;
 
 /// The `Clircle` trait describes the public interface of the crate.
 /// It contains all the platform-independent functionality.
+/// Additionally, an implementation of `Eq` is required, that gives a simple way to check for
+/// conflicts, if using the more elaborate `surely_conflicts_with` method is not wanted.
 /// This trait is implemented for the structs `UnixIdentifier` and `WindowsIdentifier`.
-pub trait Clircle: Eq + TryFrom<Stdio> + for<'a> TryFrom<&'a Path> {}
+pub trait Clircle: Eq + TryFrom<Stdio> + TryFrom<File> {
+    /// Returns the `File` that was used for `From<File>`. If the instance was created otherwise,
+    /// this may also return `None`.
+    fn into_inner(self) -> Option<File>;
+
+    /// Checks whether the two values will without doubt conflict. By default, this always returns
+    /// `false`, but implementors can override this method. Currently, only `UnixIdentifier`
+    /// overrides `surely_conflicts_with`.
+    fn surely_conflicts_with(&self, _other: &Self) -> bool {
+        false
+    }
+}
 
 /// The three stdio streams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,8 +69,6 @@ pub enum Stdio {
     Stdout,
     Stderr,
 }
-
-impl<T> Clircle for T where T: Eq + TryFrom<Stdio> + for<'a> TryFrom<&'a Path> {}
 
 /// Finds a common `Identifier` in the two given slices.
 pub fn output_among_inputs<'o, T>(outputs: &'o [T], inputs: &[T]) -> Option<&'o T>
@@ -81,38 +92,14 @@ where
 mod tests {
     use super::*;
     use std::collections::HashSet;
-    use std::fs::{self, File};
     use std::hash::Hash;
 
-    fn contains_duplicates<T>(items: &[T]) -> bool
+    fn contains_duplicates<T>(items: Vec<T>) -> bool
     where
-        T: Eq + Hash + Copy,
+        T: Eq + Hash,
     {
         let mut set = HashSet::new();
-        items.iter().copied().any(|item| !set.insert(item))
-    }
-
-    #[test]
-    fn test_from_path() -> Result<(), &'static str> {
-        // To ensure that this directory is deleted again, assert! is not invoked.
-        // Instead, this method returns Result and .? is used.
-        let dir = tempfile::tempdir().expect("Couldn't create tempdir.");
-        let dir_path = dir.path().to_path_buf();
-
-        let non_existing_file = dir_path.join("oop_in_c.txt");
-        if Identifier::try_from(non_existing_file.as_path()).is_ok() {
-            return Err(
-                "Identifier::try_from returned Ok when given a path to a file that does not exist.",
-            );
-        }
-
-        let exising_file = dir_path.join("useful_rust_resources.txt");
-        fs::write(&exising_file, b"github.com/rust-lang/rustlings")
-            .map_err(|_| "Failed to write file.")?;
-        Identifier::try_from(exising_file.as_path())
-            .map_err(|_| "Identifier::try_from returned Err when given a path to a valid file.")?;
-
-        Ok(())
+        items.into_iter().any(|item| !set.insert(item))
     }
 
     #[test]
@@ -126,18 +113,15 @@ mod tests {
             .map(|filename| dir_path.join(filename))
             .collect();
 
-        for path in &paths {
-            File::create(&path).map_err(|_| "Couldn't create temporary file.")?;
-        }
-
         let identifiers = paths
             .iter()
-            .map(AsRef::as_ref)
+            .map(File::create)
+            .map(Result::unwrap)
             .map(Identifier::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| "Some Identifier conversions failed.")?;
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
 
-        if contains_duplicates(&identifiers) {
+        if contains_duplicates(identifiers) {
             return Err("Duplicate identifier found for set of unique paths.");
         }
 
