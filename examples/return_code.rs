@@ -4,12 +4,14 @@
 //! output to stderr.
 use clircle::{stdout_among_inputs, Identifier};
 use std::convert::TryFrom;
+use std::fs::File;
 
 fn main() {
     let inputs: Vec<_> = std::env::args().collect();
     let inputs: Result<Vec<Identifier>, _> = inputs
         .iter()
-        .map(AsRef::as_ref)
+        .map(File::open)
+        .map(Result::unwrap)
         .map(Identifier::try_from)
         .collect();
     let inputs = inputs.expect("There was an argument that could not be converted to an Idenfier!");
