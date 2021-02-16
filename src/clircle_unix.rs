@@ -128,3 +128,93 @@ impl hash::Hash for UnixIdentifier {
         self.inode.hash(state);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::error::Error;
+    use std::io::Write;
+
+    use nix::pty::{openpty, OpenptyResult};
+    use nix::unistd::close;
+
+    #[test]
+    fn test_fd_closing() -> Result<(), Box<dyn Error>> {
+        let dir = tempfile::tempdir().expect("Couldn't create tempdir.");
+        let dir_path = dir.path().to_path_buf();
+
+        // 1) Check that the file returned by into_inner is still valid
+        let file = File::create(dir_path.join("myfile"))?;
+        let ident = UnixIdentifier::try_from(file)?;
+        let mut file = ident
+            .into_inner()
+            .ok_or("Did not get file back from identifier")?;
+        // Check if file can be written to without weird errors
+        file.write_all(b"Some test content")?;
+
+        // 2) Check that dropping the Identifier does not close the file, if owns_fd is false
+        let fd = file.into_raw_fd();
+        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd, false) };
+        if let Err(e) = ident {
+            let _ = dbg!(close(fd));
+            return Err(Box::new(e));
+        }
+        let ident = ident.unwrap();
+        drop(ident);
+        close(fd).map_err(|e| {
+            format!(
+                "Error closing file, that I told UnixIdentifier not to close: {}",
+                e
+            )
+        })?;
+
+        // 3) Check that the file is closed on drop, if owns_fd is true
+        let fd = File::open(dir_path.join("myfile"))?.into_raw_fd();
+        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd, true) };
+        if let Err(e) = ident {
+            let _ = dbg!(close(fd));
+            return Err(Box::new(e));
+        }
+        let ident = ident.unwrap();
+        drop(ident);
+        close(fd).expect_err("This file descriptor should have been closed already!");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pty_equal_but_not_conflicting() -> Result<(), &'static str> {
+        let OpenptyResult { master, slave } = openpty(None, None).expect("Could not open pty.");
+        let res = unsafe { UnixIdentifier::try_from_raw_fd(slave, false) }
+            .map_err(|_| "Error creating UnixIdentifier from pty fd")
+            .and_then(|ident| {
+                if !ident.eq(&ident) {
+                    return Err("ident != ident");
+                }
+                if ident.surely_conflicts_with(&ident) {
+                    return Err("pty fd does not conflict with itself, but conflict detected");
+                }
+
+                let second_ident = unsafe { UnixIdentifier::try_from_raw_fd(slave, false) }
+                    .map_err(|_| "Error creating second Identifier to pty")?;
+                if !ident.eq(&second_ident) {
+                    return Err("ident != second_ident");
+                }
+                if ident.surely_conflicts_with(&second_ident) {
+                    return Err(
+                        "Two Identifiers to the same pty should not conflict, but they do.",
+                    );
+                }
+                Ok(())
+            });
+
+        let r1 = close(master);
+        let r2 = close(slave);
+
+        r1.expect("Error closing master end of pty");
+        r2.expect("Error closing slave end of pty");
+
+        res
+    }
+}
