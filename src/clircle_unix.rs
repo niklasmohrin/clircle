@@ -1,54 +1,82 @@
-use crate::Stdio;
-use nix::libc;
-use nix::sys::stat::{fstat, stat, FileStat};
+use crate::{Clircle, Stdio};
+
 use std::convert::TryFrom;
-use std::path::Path;
+use std::fs::File;
+use std::io::{self, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
+use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
+use std::{cmp, hash, ops};
 
-/// Re-export of nix
-pub use nix;
+/// Re-export of libc
+pub use libc;
 
-cfg_if::cfg_if! {
-    if #[cfg(not(target_os = "android"))] {
-        pub type DeviceType = libc::dev_t;
-        pub type InodeType = libc::ino_t;
-    } else {
-        // This is just deduced from the libc crate source code, which is generated using bindgen.
-        cfg_if::cfg_if! {
-            if #[cfg(target_pointer_width = "32")] {
-                pub type DeviceType = libc::c_ulonglong;
-                pub type InodeType = libc::c_ulonglong;
-            } else if #[cfg(target_pointer_width = "64")] {
-                pub type DeviceType = libc::dev_t;
-                pub type InodeType = libc::ino_t;
-            } else {
-                compile_error!("Unknown pointer width on android target.");
-            }
-        }
+/// Implementation of `Clircle` for Unix.
+#[derive(Debug)]
+pub struct UnixIdentifier {
+    device: u64,
+    inode: u64,
+    size: u64,
+    is_regular_file: bool,
+    file: Option<File>,
+    owns_fd: bool,
+}
+
+impl UnixIdentifier {
+    fn file(&self) -> &File {
+        self.file.as_ref().expect("Called file() on an identifier that has already been destroyed, this should never happen! Please file a bug!")
+    }
+
+    fn current_file_offset(&self) -> io::Result<u64> {
+        self.file().seek(SeekFrom::Current(0))
+    }
+
+    fn has_content_left_to_read(&self) -> io::Result<bool> {
+        Ok(self.current_file_offset()? < self.size)
+    }
+
+    /// Creates a `UnixIdentifier` from a raw file descriptor. The preferred way to create a
+    /// `UnixIdentifier` is through one of the `TryFrom` implementations.
+    ///
+    /// # Safety
+    ///
+    /// The `owns_fd` argument should only be true, if the given file descriptor owns the resource
+    /// it points to (for example a file).
+    /// If it is true, a `File` can be obtained back with `Clircle::into_inner`, or it will be
+    /// closed when the `UnixIdentifier` is dropped.
+    ///
+    /// # Errors
+    ///
+    /// The underlying call to `File::metadata` fails.
+    pub unsafe fn try_from_raw_fd(fd: RawFd, owns_fd: bool) -> io::Result<Self> {
+        Self::try_from(File::from_raw_fd(fd)).map(|mut ident| {
+            ident.owns_fd = owns_fd;
+            ident
+        })
     }
 }
 
-/// Implementation of `Clircle` for Unix.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct UnixIdentifier {
-    /// The `st_dev` of a `FileStat` (returned by the `stat` family of functions).
-    pub device: DeviceType,
-    /// The `st_ino` of a `FileStat` (returned by the `stat` family of functions).
-    pub inode: InodeType,
-}
+impl Clircle for UnixIdentifier {
+    #[must_use]
+    fn into_inner(mut self) -> Option<File> {
+        if self.owns_fd {
+            self.owns_fd = false;
+            self.file.take()
+        } else {
+            None
+        }
+    }
 
-/// Error for `TryFrom<Stdio>`
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ClircleStdioError {
-    /// The given variant points to a tty. Clircle doesn't hand out `Identifier`s to a tty, because
-    /// if both stdin and stdout point to the same tty, no clash occurs, but a cycle will still be
-    /// detected.
-    IsTTY,
-    /// The error returned from fstat.
-    Nix(nix::Error),
+    /// This method implements the conflict check that is used in the GNU coreutils program `cat`.
+    #[must_use]
+    fn surely_conflicts_with(&self, other: &Self) -> bool {
+        PartialEq::eq(self, other)
+            && self.is_regular_file
+            && other.has_content_left_to_read().unwrap_or(true)
+    }
 }
 
 impl TryFrom<Stdio> for UnixIdentifier {
-    type Error = ClircleStdioError;
+    type Error = <Self as TryFrom<File>>::Error;
 
     fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
         let fd = match stdio {
@@ -56,30 +84,47 @@ impl TryFrom<Stdio> for UnixIdentifier {
             Stdio::Stdout => libc::STDOUT_FILENO,
             Stdio::Stderr => libc::STDERR_FILENO,
         };
+        // Safety: It is okay to create the file, because it won't be dropped later since the
+        // `owns_fd` field is not set.
+        unsafe { Self::try_from_raw_fd(fd, false) }
+    }
+}
 
-        if nix::unistd::isatty(fd) == Ok(true) {
-            Err(ClircleStdioError::IsTTY)
-        } else {
-            fstat(fd)
-                .map(UnixIdentifier::from)
-                .map_err(ClircleStdioError::Nix)
+impl ops::Drop for UnixIdentifier {
+    fn drop(&mut self) {
+        if !self.owns_fd {
+            let _ = self.file.take().map(IntoRawFd::into_raw_fd);
         }
     }
 }
 
-impl<'a> TryFrom<&'a Path> for UnixIdentifier {
-    type Error = nix::Error;
+impl TryFrom<File> for UnixIdentifier {
+    type Error = io::Error;
 
-    fn try_from(path: &'a Path) -> Result<Self, Self::Error> {
-        stat(path).map(UnixIdentifier::from)
+    fn try_from(file: File) -> Result<Self, Self::Error> {
+        file.metadata().map(|metadata| Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            size: metadata.size(),
+            is_regular_file: metadata.file_type().is_file(),
+            file: Some(file),
+            owns_fd: true,
+        })
     }
 }
 
-impl From<FileStat> for UnixIdentifier {
-    fn from(stats: FileStat) -> Self {
-        UnixIdentifier {
-            device: stats.st_dev,
-            inode: stats.st_ino,
-        }
+impl cmp::PartialEq for UnixIdentifier {
+    #[must_use]
+    fn eq(&self, other: &Self) -> bool {
+        self.device == other.device && self.inode == other.inode
+    }
+}
+
+impl Eq for UnixIdentifier {}
+
+impl hash::Hash for UnixIdentifier {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.device.hash(state);
+        self.inode.hash(state);
     }
 }

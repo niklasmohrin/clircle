@@ -24,7 +24,7 @@
 cfg_if::cfg_if! {
     if #[cfg(unix)] {
         mod clircle_unix;
-        pub use clircle_unix::{nix, ClircleStdioError, UnixIdentifier};
+        pub use clircle_unix::{libc, UnixIdentifier};
         /// Identifies a file. The type is aliased according to the target platform.
         pub type Identifier = UnixIdentifier;
     } else if #[cfg(windows)] {
