@@ -58,6 +58,24 @@ pub trait Clircle: Eq + TryFrom<Stdio> + TryFrom<File> {
     fn surely_conflicts_with(&self, _other: &Self) -> bool {
         false
     }
+
+    /// Shorthand for `try_from(Stdio::Stdin)`.
+    #[must_use]
+    fn stdin() -> Option<Self> {
+        Self::try_from(Stdio::Stdin).ok()
+    }
+
+    #[must_use]
+    /// Shorthand for `try_from(Stdio::Stdout)`.
+    fn stdout() -> Option<Self> {
+        Self::try_from(Stdio::Stdout).ok()
+    }
+
+    #[must_use]
+    /// Shorthand for `try_from(Stdio::Stderr)`.
+    fn stderr() -> Option<Self> {
+        Self::try_from(Stdio::Stderr).ok()
+    }
 }
 
 /// The three stdio streams.
@@ -83,9 +101,7 @@ pub fn stdout_among_inputs<T>(inputs: &[T]) -> bool
 where
     T: Clircle,
 {
-    T::try_from(Stdio::Stdout)
-        .map(|stdout| inputs.contains(&stdout))
-        .unwrap_or(false)
+    T::stdout().map_or(false, |stdout| inputs.contains(&stdout))
 }
 
 #[cfg(test)]
