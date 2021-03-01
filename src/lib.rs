@@ -43,6 +43,7 @@
 #![deny(clippy::all)]
 #![deny(missing_docs)]
 #![warn(clippy::pedantic)]
+#![cfg_attr(target_os = "wasi", feature(wasi_ext))]
 
 cfg_if::cfg_if! {
     if #[cfg(unix)] {
@@ -55,8 +56,13 @@ cfg_if::cfg_if! {
         pub use clircle_windows::{winapi, WindowsIdentifier};
         /// Identifies a file. The type is aliased according to the target platform.
         pub type Identifier = WindowsIdentifier;
+    } else if #[cfg(target_os = "wasi")] {
+        mod clircle_wasi;
+        pub use clircle_wasi::{libc, WasiIdentifier};
+        /// Identifies a file. The type is aliased according to the target platform.
+        pub type Identifier = WasiIdentifier;
     } else {
-        compile_error!("Neither cfg(unix) nor cfg(windows) was true, aborting.");
+        compile_error!("Neither cfg(unix), cfg(windows) nor cfg(target_os = \"wasi\") was true, aborting.");
     }
 }
 
