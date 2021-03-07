@@ -1,6 +1,6 @@
 # Clircle
 
-[![CI](https://github.com/niklasmohrin/clircle/workflows/CI/badge.svg?branch=main)](https://github.com/niklasmohrin/clircle/actions)
+[![CI](https://github.com/niklasmohrin/clircle/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/niklasmohrin/clircle/actions/workflows/ci.yml)
 [![crates.io version](https://img.shields.io/crates/v/clircle)](https://crates.io/crates/clircle)
 [![MSRV](https://img.shields.io/badge/MSRV-1.40.0-blue)](https://blog.rust-lang.org/2019/12/19/Rust-1.40.0.html)
 
