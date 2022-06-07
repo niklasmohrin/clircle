@@ -38,7 +38,7 @@ needed to identify a file.
 
 ## Where did this crate come from?
 
-This crate originated in a pull request to the [`bat`](github.com/sharkdp/bat) project.
+This crate originated in a pull request to the [`bat`](https://github.com/sharkdp/bat) project.
 The `bat` tool strives to be a drop-in replacement for the unix tool `cat`.
 Since `cat` detects these cycles, `bat` has to do so too, which is where most
 of this code came into play. However, it was decided, that the new logic was
