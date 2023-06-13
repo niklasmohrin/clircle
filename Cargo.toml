@@ -2,8 +2,9 @@
 name = "clircle"
 version = "0.3.0"
 authors = ["Niklas Mohrin <niklas.mohrin@gmail.com>"]
-edition = "2018"
 license = "MIT OR Apache-2.0"
+rust-version = "1.56"
+edition = "2021"
 description = "Detect IO circles in your CLI apps arguments."
 homepage = "https://github.com/niklasmohrin/clircle"
 repository = "https://github.com/niklasmohrin/clircle"
@@ -23,7 +24,7 @@ cfg-if = "1.0.0"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["winnt", "winbase", "processenv", "handleapi", "ntdef", "fileapi"] }
+winapi = { version = "0.3.9", features = ["winnt", "winbase", "processenv", "handleapi", "ntdef", "fileapi", "std"] }
 
 [dev-dependencies]
 tempfile = "3.1.0"

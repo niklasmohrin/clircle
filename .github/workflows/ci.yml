@@ -8,30 +8,22 @@ on:
 
 jobs:
   build:
-    name: Build and test
-    runs-on: ${{ matrix.os }}
+    name: Build, test, and lint
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: ["1.51.0", stable]
+        rust: ["1.56.0", stable]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          default: true
-          profile: minimal
           components: clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
+      - run: cargo build
+      - run: cargo test
+      - run: cargo clippy
 
   build_extra:
     name: Build on extra platforms
@@ -49,32 +41,18 @@ jobs:
           - i686-unknown-linux-gnu
           - x86_64-linux-android
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
-          default: true
-          profile: minimal
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target ${{ matrix.target }}
-          use-cross: true
+          targets: ${{ matrix.target }}
+      - run: cargo build --target ${{ matrix.target }}
 
   rustfmt:
-    name: Check rustfmt
+    name: Check formatting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          default: true
-          profile: minimal
           components: rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - run: cargo fmt --all -- --check
