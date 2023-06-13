@@ -2,7 +2,7 @@ use crate::{Clircle, Stdio};
 
 use std::convert::TryFrom;
 use std::fs::File;
-use std::io::{self, Seek, SeekFrom};
+use std::io::{self, Seek};
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::{cmp, hash, ops};
@@ -27,7 +27,7 @@ impl UnixIdentifier {
     }
 
     fn current_file_offset(&self) -> io::Result<u64> {
-        self.file().seek(SeekFrom::Current(0))
+        self.file().stream_position()
     }
 
     fn has_content_left_to_read(&self) -> io::Result<bool> {
