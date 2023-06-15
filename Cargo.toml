@@ -3,7 +3,7 @@ name = "clircle"
 version = "0.4.0"
 authors = ["Niklas Mohrin <niklas.mohrin@gmail.com>"]
 license = "MIT OR Apache-2.0"
-rust-version = "1.56"
+rust-version = "1.60"
 edition = "2021"
 description = "Detect IO circles in your CLI apps arguments."
 homepage = "https://github.com/niklasmohrin/clircle"
@@ -15,9 +15,11 @@ keywords = ["cycle", "arguments", "argv", "io"]
 
 [features]
 default = ["serde"]
+serde = ["dep:serde", "dep:serde_derive"]
 
 [dependencies]
-serde = { version = "1.0.117", optional = true, features = ["derive"] }
+serde = { version = "1.0.117", optional = true }
+serde_derive = { version = "1.0.117", optional = true }
 cfg-if = "1.0.0"
 
 [target.'cfg(not(windows))'.dependencies]

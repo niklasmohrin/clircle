@@ -61,7 +61,7 @@ cfg_if::cfg_if! {
 }
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use serde_derive::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fs::File;
 
