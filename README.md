@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/niklasmohrin/clircle/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/niklasmohrin/clircle/actions/workflows/ci.yml)
 [![crates.io version](https://img.shields.io/crates/v/clircle)](https://crates.io/crates/clircle)
-[![MSRV](https://img.shields.io/badge/MSRV-1.60.0-blue)](https://blog.rust-lang.org/2022/04/07/Rust-1.60.0.html)
+[![MSRV](https://img.shields.io/badge/MSRV-1.63.0-blue)](https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html)
 
 Clircle provides a cross-platform API to detect read / write cycles from your
 user-supplied arguments. You can get the important identifiers of a file (from

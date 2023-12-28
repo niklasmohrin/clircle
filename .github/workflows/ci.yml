@@ -13,10 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: ["1.60.0", stable]
+        rust: ["1.63.0", stable]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -41,17 +41,31 @@ jobs:
           - i686-unknown-linux-gnu
           - x86_64-linux-android
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - run: cargo build --target ${{ matrix.target }}
 
+  minimal_versions:
+    # Adapted from https://github.com/jonhoo/rust-ci-conf/blob/a13691528b3f1918594bfc53db8cf5ad0240c59e/.github/workflows/test.yml#L46
+    name: Build with minimal dependency versions
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo +nightly update -Zminimal-versions
+      - run: cargo +stable build --locked --all-features --all-targets
+
   rustfmt:
     name: Check formatting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
