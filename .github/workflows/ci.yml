@@ -47,6 +47,20 @@ jobs:
           targets: ${{ matrix.target }}
       - run: cargo build --target ${{ matrix.target }}
 
+  minimal_versions:
+    # Adapted from https://github.com/jonhoo/rust-ci-conf/blob/a13691528b3f1918594bfc53db8cf5ad0240c59e/.github/workflows/test.yml#L46
+    name: Build with minimal dependency versions
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo +nightly update -Zminimal-versions
+      - run: cargo +stable build --locked --all-features --all-targets
+
   rustfmt:
     name: Check formatting
     runs-on: ubuntu-latest
