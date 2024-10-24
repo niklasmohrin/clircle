@@ -1,6 +1,6 @@
 [package]
 name = "clircle"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Niklas Mohrin <dev@niklasmohrin.de>"]
 license = "MIT OR Apache-2.0"
 rust-version = "1.69"
@@ -24,12 +24,10 @@ serde_derive = { version = "1.0.117", optional = true }
 cfg-if = "1.0.0"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["winnt", "winbase", "processenv", "handleapi", "ntdef", "fileapi", "std"] }
+windows = { version = "0.56.0", features = ["Win32_Storage_FileSystem", "Win32_System_Console"] }
 
 [dev-dependencies]
-tempfile = "3.1.0"
+tempfile = "3.4.0"
 
-[target.'cfg(unix)'.dev-dependencies.nix]
-version = "0.29"
-default-features = false
-features = ["term"]
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.29", default-features = false, features = ["term"] }
