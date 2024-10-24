@@ -3,12 +3,10 @@ use crate::{Clircle, Stdio};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{self, Seek};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::{cmp, hash, ops};
-
-/// Re-export of libc
-pub use libc;
 
 /// Implementation of `Clircle` for Unix.
 #[derive(Debug)]
@@ -80,9 +78,9 @@ impl TryFrom<Stdio> for UnixIdentifier {
 
     fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
         let fd = match stdio {
-            Stdio::Stdin => libc::STDIN_FILENO,
-            Stdio::Stdout => libc::STDOUT_FILENO,
-            Stdio::Stderr => libc::STDERR_FILENO,
+            Stdio::Stdin => io::stdin().as_raw_fd(),
+            Stdio::Stdout => io::stdout().as_raw_fd(),
+            Stdio::Stderr => io::stderr().as_raw_fd(),
         };
         // Safety: It is okay to create the file, because it won't be dropped later since the
         // `owns_fd` field is not set.
@@ -133,88 +131,78 @@ impl hash::Hash for UnixIdentifier {
 mod tests {
     use super::*;
 
-    use std::error::Error;
     use std::io::Write;
+    use std::os::fd::OwnedFd;
 
     use nix::pty::{openpty, OpenptyResult};
     use nix::unistd::close;
 
     #[test]
-    fn test_fd_closing() -> Result<(), Box<dyn Error>> {
-        let dir = tempfile::tempdir().expect("Couldn't create tempdir.");
-        let dir_path = dir.path().to_path_buf();
-
-        // 1) Check that the file returned by into_inner is still valid
-        let file = File::create(dir_path.join("myfile"))?;
-        let ident = UnixIdentifier::try_from(file)?;
+    fn test_into_inner() {
+        let file = tempfile::tempfile().expect("failed to create tempfile");
+        file.metadata().expect("can stat file");
+        let ident = UnixIdentifier::try_from(file).expect("failed to create identifier");
         let mut file = ident
             .into_inner()
-            .ok_or("Did not get file back from identifier")?;
-        // Check if file can be written to without weird errors
-        file.write_all(b"Some test content")?;
-
-        // 2) Check that dropping the Identifier does not close the file, if owns_fd is false
-        let fd = file.into_raw_fd();
-        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd, false) };
-        if let Err(e) = ident {
-            let _ = dbg!(close(fd));
-            return Err(Box::new(e));
-        }
-        let ident = ident.unwrap();
-        drop(ident);
-        close(fd).map_err(|e| {
-            format!(
-                "Error closing file, that I told UnixIdentifier not to close: {}",
-                e
-            )
-        })?;
-
-        // 3) Check that the file is closed on drop, if owns_fd is true
-        let fd = File::open(dir_path.join("myfile"))?.into_raw_fd();
-        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd, true) };
-        if let Err(e) = ident {
-            let _ = dbg!(close(fd));
-            return Err(Box::new(e));
-        }
-        let ident = ident.unwrap();
-        drop(ident);
-        close(fd).expect_err("This file descriptor should have been closed already!");
-
-        Ok(())
+            .expect("failed to convert identifier to file");
+        file.write_all(b"some test content")
+            .expect("failed to write test content to file");
     }
 
     #[test]
-    fn test_pty_equal_but_not_conflicting() -> Result<(), &'static str> {
-        let OpenptyResult { master, slave } = openpty(None, None).expect("Could not open pty.");
-        let res = unsafe { UnixIdentifier::try_from_raw_fd(slave, false) }
-            .map_err(|_| "Error creating UnixIdentifier from pty fd")
-            .and_then(|ident| {
-                if !ident.eq(&ident) {
-                    return Err("ident != ident");
-                }
-                if ident.surely_conflicts_with(&ident) {
-                    return Err("pty fd does not conflict with itself, but conflict detected");
-                }
+    fn test_borrowed_fd() {
+        let file = tempfile::tempfile().expect("failed to create tempfile");
+        let fd: OwnedFd = file.into();
+        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd.as_raw_fd(), false) }
+            .expect("failed to create identifier");
+        drop(ident);
+        let fd = fd.into_raw_fd();
+        close(fd).expect("error closing fd");
+        #[cfg(feature = "test-close-again")]
+        close(fd).expect_err("closing again should fail");
+    }
 
-                let second_ident = unsafe { UnixIdentifier::try_from_raw_fd(slave, false) }
-                    .map_err(|_| "Error creating second Identifier to pty")?;
-                if !ident.eq(&second_ident) {
-                    return Err("ident != second_ident");
-                }
-                if ident.surely_conflicts_with(&second_ident) {
-                    return Err(
-                        "Two Identifiers to the same pty should not conflict, but they do.",
-                    );
-                }
-                Ok(())
-            });
+    #[test]
+    fn test_owned_fd() {
+        let file = tempfile::tempfile().expect("failed to create tempfile");
+        let fd: OwnedFd = file.into();
+        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd.as_raw_fd(), true) }
+            .expect("failed to create identifier");
+        drop(ident);
+        #[cfg(feature = "test-close-again")]
+        close(fd.into_raw_fd())
+            .expect_err("the fd should have already been closed by dropping the identifier");
+    }
 
-        let r1 = close(master);
-        let r2 = close(slave);
+    #[test]
+    fn test_pty_equal_but_not_conflicting() {
+        let OpenptyResult {
+            master: parent,
+            slave: child,
+        } = openpty(None, None).expect("failed to open pty");
 
-        r1.expect("Error closing master end of pty");
-        r2.expect("Error closing slave end of pty");
+        let parent_ident = unsafe { UnixIdentifier::try_from_raw_fd(parent.as_raw_fd(), false) }
+            .expect("failed to create parent identifier");
 
-        res
+        assert_eq!(parent_ident, parent_ident);
+
+        assert!(!parent_ident.surely_conflicts_with(&parent_ident));
+
+        let child_ident = unsafe { UnixIdentifier::try_from_raw_fd(child.as_raw_fd(), false) }
+            .expect("failed to create child identifier");
+
+        assert_ne!(parent_ident, child_ident);
+        assert!(!parent_ident.surely_conflicts_with(&child_ident));
+
+        drop(child_ident);
+        drop(parent_ident);
+        let child = child.into_raw_fd();
+        close(child).expect("failed to close child");
+        #[cfg(feature = "test-close-again")]
+        close(child).expect_err("closing child again should fail");
+        let parent = parent.into_raw_fd();
+        close(parent).expect("failed to close parent");
+        #[cfg(feature = "test-close-again")]
+        close(parent).expect_err("closing parent again should fail");
     }
 }
