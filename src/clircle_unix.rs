@@ -10,7 +10,7 @@ use std::{cmp, hash, ops};
 
 /// Implementation of `Clircle` for Unix.
 #[derive(Debug)]
-pub struct UnixIdentifier {
+pub(crate) struct Identifier {
     device: u64,
     inode: u64,
     size: u64,
@@ -19,7 +19,7 @@ pub struct UnixIdentifier {
     owns_fd: bool,
 }
 
-impl UnixIdentifier {
+impl Identifier {
     fn file(&self) -> &File {
         self.file.as_ref().expect("Called file() on an identifier that has already been destroyed, this should never happen! Please file a bug!")
     }
@@ -45,7 +45,7 @@ impl UnixIdentifier {
     /// # Errors
     ///
     /// The underlying call to `File::metadata` fails.
-    pub unsafe fn try_from_raw_fd(fd: RawFd, owns_fd: bool) -> io::Result<Self> {
+    unsafe fn try_from_raw_fd(fd: RawFd, owns_fd: bool) -> io::Result<Self> {
         Self::try_from(File::from_raw_fd(fd)).map(|mut ident| {
             ident.owns_fd = owns_fd;
             ident
@@ -53,7 +53,7 @@ impl UnixIdentifier {
     }
 }
 
-impl Clircle for UnixIdentifier {
+impl Clircle for Identifier {
     #[must_use]
     fn into_inner(mut self) -> Option<File> {
         if self.owns_fd {
@@ -73,7 +73,7 @@ impl Clircle for UnixIdentifier {
     }
 }
 
-impl TryFrom<Stdio> for UnixIdentifier {
+impl TryFrom<Stdio> for Identifier {
     type Error = <Self as TryFrom<File>>::Error;
 
     fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
@@ -88,7 +88,7 @@ impl TryFrom<Stdio> for UnixIdentifier {
     }
 }
 
-impl ops::Drop for UnixIdentifier {
+impl ops::Drop for Identifier {
     fn drop(&mut self) {
         if !self.owns_fd {
             let _ = self.file.take().map(IntoRawFd::into_raw_fd);
@@ -96,7 +96,7 @@ impl ops::Drop for UnixIdentifier {
     }
 }
 
-impl TryFrom<File> for UnixIdentifier {
+impl TryFrom<File> for Identifier {
     type Error = io::Error;
 
     fn try_from(file: File) -> Result<Self, Self::Error> {
@@ -111,16 +111,16 @@ impl TryFrom<File> for UnixIdentifier {
     }
 }
 
-impl cmp::PartialEq for UnixIdentifier {
+impl cmp::PartialEq for Identifier {
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
         self.device == other.device && self.inode == other.inode
     }
 }
 
-impl Eq for UnixIdentifier {}
+impl Eq for Identifier {}
 
-impl hash::Hash for UnixIdentifier {
+impl hash::Hash for Identifier {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.device.hash(state);
         self.inode.hash(state);
@@ -141,7 +141,7 @@ mod tests {
     fn test_into_inner() {
         let file = tempfile::tempfile().expect("failed to create tempfile");
         file.metadata().expect("can stat file");
-        let ident = UnixIdentifier::try_from(file).expect("failed to create identifier");
+        let ident = Identifier::try_from(file).expect("failed to create identifier");
         let mut file = ident
             .into_inner()
             .expect("failed to convert identifier to file");
@@ -153,7 +153,7 @@ mod tests {
     fn test_borrowed_fd() {
         let file = tempfile::tempfile().expect("failed to create tempfile");
         let fd: OwnedFd = file.into();
-        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd.as_raw_fd(), false) }
+        let ident = unsafe { Identifier::try_from_raw_fd(fd.as_raw_fd(), false) }
             .expect("failed to create identifier");
         drop(ident);
         let fd = fd.into_raw_fd();
@@ -166,7 +166,7 @@ mod tests {
     fn test_owned_fd() {
         let file = tempfile::tempfile().expect("failed to create tempfile");
         let fd: OwnedFd = file.into();
-        let ident = unsafe { UnixIdentifier::try_from_raw_fd(fd.as_raw_fd(), true) }
+        let ident = unsafe { Identifier::try_from_raw_fd(fd.as_raw_fd(), true) }
             .expect("failed to create identifier");
         drop(ident);
         #[cfg(feature = "test-close-again")]
@@ -181,14 +181,14 @@ mod tests {
             slave: child,
         } = openpty(None, None).expect("failed to open pty");
 
-        let parent_ident = unsafe { UnixIdentifier::try_from_raw_fd(parent.as_raw_fd(), false) }
+        let parent_ident = unsafe { Identifier::try_from_raw_fd(parent.as_raw_fd(), false) }
             .expect("failed to create parent identifier");
 
         assert_eq!(parent_ident, parent_ident);
 
         assert!(!parent_ident.surely_conflicts_with(&parent_ident));
 
-        let child_ident = unsafe { UnixIdentifier::try_from_raw_fd(child.as_raw_fd(), false) }
+        let child_ident = unsafe { Identifier::try_from_raw_fd(child.as_raw_fd(), false) }
             .expect("failed to create child identifier");
 
         assert_ne!(parent_ident, child_ident);

@@ -47,14 +47,10 @@
 cfg_if::cfg_if! {
     if #[cfg(unix)] {
         mod clircle_unix;
-        pub use clircle_unix::UnixIdentifier;
-        /// Identifies a file. The type is aliased according to the target platform.
-        pub type Identifier = UnixIdentifier;
+        use clircle_unix as imp;
     } else if #[cfg(windows)] {
         mod clircle_windows;
-        pub use clircle_windows::{winapi, WindowsIdentifier};
-        /// Identifies a file. The type is aliased according to the target platform.
-        pub type Identifier = WindowsIdentifier;
+        use clircle_windows as imp;
     } else {
         compile_error!("Neither cfg(unix) nor cfg(windows) was true, aborting.");
     }
@@ -64,6 +60,7 @@ cfg_if::cfg_if! {
 use serde_derive::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fs::File;
+use std::io;
 
 /// The `Clircle` trait describes the public interface of the crate.
 /// It contains all the platform-independent functionality.
@@ -76,7 +73,7 @@ pub trait Clircle: Eq + TryFrom<Stdio> + TryFrom<File> {
     fn into_inner(self) -> Option<File>;
 
     /// Checks whether the two values will without doubt conflict. By default, this always returns
-    /// `false`, but implementors can override this method. Currently, only `UnixIdentifier`
+    /// `false`, but implementors can override this method. Currently, only the Unix implementation
     /// overrides `surely_conflicts_with`.
     fn surely_conflicts_with(&self, _other: &Self) -> bool {
         false
@@ -125,6 +122,37 @@ where
     T: Clircle,
 {
     T::stdout().map_or(false, |stdout| inputs.contains(&stdout))
+}
+
+/// Identifies a file. The type forwards all methods to the platform implementation.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct Identifier(imp::Identifier);
+
+impl Clircle for Identifier {
+    #[must_use]
+    fn into_inner(self) -> Option<File> {
+        self.0.into_inner()
+    }
+
+    fn surely_conflicts_with(&self, other: &Self) -> bool {
+        self.0.surely_conflicts_with(&other.0)
+    }
+}
+
+impl TryFrom<Stdio> for Identifier {
+    type Error = io::Error;
+
+    fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
+        imp::Identifier::try_from(stdio).map(Self)
+    }
+}
+
+impl TryFrom<File> for Identifier {
+    type Error = io::Error;
+
+    fn try_from(file: File) -> Result<Self, Self::Error> {
+        imp::Identifier::try_from(file).map(Self)
+    }
 }
 
 #[cfg(test)]
