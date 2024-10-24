@@ -61,6 +61,18 @@ jobs:
       - run: cargo +nightly update -Zminimal-versions
       - run: cargo +stable build --locked --all-features --all-targets
 
+  semver:
+    name: Check for semver breakage
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+
   rustfmt:
     name: Check formatting
     runs-on: ubuntu-latest
