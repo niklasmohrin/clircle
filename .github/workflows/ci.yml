@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: ["1.63.0", stable]
+        rust: ["1.69.0", stable]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           components: clippy
       - run: cargo build
-      - run: cargo test
+      - run: cargo test -F test-close-again -- --test-threads 1
       - run: cargo clippy
 
   build_extra:
