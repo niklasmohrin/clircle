@@ -3,12 +3,10 @@ use crate::{Clircle, Stdio};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{self, Seek};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
 use std::{cmp, hash, ops};
-
-/// Re-export of libc
-pub use libc;
 
 /// Implementation of `Clircle` for Unix.
 #[derive(Debug)]
@@ -80,9 +78,9 @@ impl TryFrom<Stdio> for UnixIdentifier {
 
     fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
         let fd = match stdio {
-            Stdio::Stdin => libc::STDIN_FILENO,
-            Stdio::Stdout => libc::STDOUT_FILENO,
-            Stdio::Stderr => libc::STDERR_FILENO,
+            Stdio::Stdin => io::stdin().as_raw_fd(),
+            Stdio::Stdout => io::stdout().as_raw_fd(),
+            Stdio::Stderr => io::stderr().as_raw_fd(),
         };
         // Safety: It is okay to create the file, because it won't be dropped later since the
         // `owns_fd` field is not set.
