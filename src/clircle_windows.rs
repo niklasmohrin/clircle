@@ -14,24 +14,21 @@ use std::mem::MaybeUninit;
 use std::os::windows::io::{FromRawHandle, IntoRawHandle, RawHandle};
 use std::{cmp, hash, io, mem, ops};
 
-/// Re-export of winapi
-pub use winapi;
-
 /// Implementation of `Clircle` for Windows.
 #[derive(Debug)]
-pub struct WindowsIdentifier {
+pub(crate) struct Identifier {
     volume_serial: u32,
     file_index: u64,
     handle: RawHandle,
     owns_handle: bool,
 }
 
-impl WindowsIdentifier {
+impl Identifier {
     unsafe fn try_from_raw_handle(handle: RawHandle, owns_handle: bool) -> Result<Self, io::Error> {
         if handle == INVALID_HANDLE_VALUE || handle == NULL {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Tried to convert handle to WindowsIdentifier that was invalid or null.",
+                "Tried to convert handle to Identifier that was invalid or null.",
             ));
         }
         // SAFETY: This function can be called with any valid handle.
@@ -39,7 +36,7 @@ impl WindowsIdentifier {
         if GetFileType(handle) != FILE_TYPE_DISK {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Tried to convert handle to WindowsIdentifier that was not a file handle.",
+                "Tried to convert handle to Identifier that was not a file handle.",
             ));
         }
         let mut fi = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
@@ -72,14 +69,14 @@ impl WindowsIdentifier {
     }
 }
 
-impl Clircle for WindowsIdentifier {
+impl Clircle for Identifier {
     #[must_use]
     fn into_inner(mut self) -> Option<File> {
         Some(unsafe { File::from_raw_handle(self.take_handle()?) })
     }
 }
 
-impl TryFrom<Stdio> for WindowsIdentifier {
+impl TryFrom<Stdio> for Identifier {
     type Error = io::Error;
 
     fn try_from(stdio: Stdio) -> Result<Self, Self::Error> {
@@ -99,7 +96,7 @@ impl TryFrom<Stdio> for WindowsIdentifier {
         unsafe { Self::try_from_raw_handle(handle, false) }
     }
 }
-impl TryFrom<File> for WindowsIdentifier {
+impl TryFrom<File> for Identifier {
     type Error = io::Error;
 
     fn try_from(file: File) -> Result<Self, Self::Error> {
@@ -107,7 +104,7 @@ impl TryFrom<File> for WindowsIdentifier {
     }
 }
 
-impl ops::Drop for WindowsIdentifier {
+impl ops::Drop for Identifier {
     fn drop(&mut self) {
         unsafe {
             if let Some(handle) = self.take_handle() {
@@ -117,15 +114,15 @@ impl ops::Drop for WindowsIdentifier {
     }
 }
 
-impl cmp::PartialEq for WindowsIdentifier {
+impl cmp::PartialEq for Identifier {
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
         self.volume_serial == other.volume_serial && self.file_index == other.file_index
     }
 }
-impl Eq for WindowsIdentifier {}
+impl Eq for Identifier {}
 
-impl hash::Hash for WindowsIdentifier {
+impl hash::Hash for Identifier {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.volume_serial.hash(state);
         self.file_index.hash(state);
